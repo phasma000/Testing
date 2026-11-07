@@ -1,1 +1,387 @@
-h
+-- language: Luau, file: spectre_youtube.luau, target: Roblox executor
+-- no gsub. load pristine, alias after. window titled SPECTRE.
+
+local Compkiller = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/VapeVoidware/CompKiller/refs/heads/main/src/source.luau"
+))()
+
+local Spectre = Compkiller
+
+-- ==========================================
+-- 1. EXECUTOR ENVIRONMENT & API SETUP
+-- ==========================================
+local HttpService = game:GetService("HttpService")
+local request_ = request or http_request or syn_request or syn and syn.request or http and http.request or fluxus and fluxus.request or getgenv and getgenv().request
+
+if not isfolder("YouTube Music Player") then makefolder("YouTube Music Player") end
+if not isfolder("YouTube Music Player/Musics") then makefolder("YouTube Music Player/Musics") end
+
+local YMP_API = 'https://ymp-api.ymp-api.workers.dev'
+
+-- API: Search
+local function ApiSearchFree(query)
+    local url = YMP_API .. '/search/youtube/free/' .. HttpService:UrlEncode(query)
+    local ok, res = pcall(function() return game:HttpGet(url) end)
+    if not ok or not res then return nil end
+    local ok2, data = pcall(function() return HttpService:JSONDecode(res) end)
+    if ok2 and data and data.results then return data.results end
+    return nil
+end
+
+-- API: PoW Download (SHA256 logic)
+local tbl12 = {1116352408,1899447441,3049323471,3921009573,961987163,1508970993,2453635748,2870763221,3624381080,310598401,607225278,1426881987,1925078388,2162078206,2614888103,3248222580,3835390401,4022224774,264347078,604807628,770255983,1249150122,1555081692,1996064986,2554220882,2821834349,2952996808,3210313671,3336571891,3584528711,113926993,338241895,666307205,773529912,1294757372,1396182291,1695183700,1986661051,2177026350,2456956037,2730485921,2820302411,3259730800,3345764771,3516065817,3600352804,4094571909,275423344,430227734,506948616,659060556,883997877,958139571,1322822218,1537002063,1747873779,1955562222,2024104815,2227730452,2361852424,2428436474,2756734187,3204031479,3329325298}
+local function fn6(a,b) return bit32.rrotate(a,b) end
+local function fn7(...) local p=table.pack(...);local s=0;for i=1,select('#',...) do s=bit32.band(s+select(i,table.unpack(p,1,p.n)),4294967295) end;return s end
+local function fn8(str)
+    local len=#str;local b={string.byte(str,1,len)};local bitlen=len*8;b[#b+1]=128
+    while #b%64~=56 do b[#b+1]=0 end
+    local hi=math.floor(bitlen/4294967296);local lo=bitlen%4294967296
+    for i=24,0,-8 do b[#b+1]=bit32.band(bit32.rshift(hi,i),255) end
+    for i=24,0,-8 do b[#b+1]=bit32.band(bit32.rshift(lo,i),255) end
+    local a,b2,c,d,e,f,g,h=1779033703,3144134277,1013904242,2773480762,1359893119,2600822924,528734635,1541459225
+    for i=1,#b,64 do
+        local w={}
+        for j=0,15 do local idx=i+j*4;w[j+1]=bit32.bor(bit32.lshift(b[idx],24),bit32.lshift(b[idx+1],16),bit32.lshift(b[idx+2],8),b[idx+3]) end
+        for j=17,64 do
+            local w15=w[j-15];local w2=w[j-2]
+            local s0=bit32.bxor(fn6(w15,7),fn6(w15,18),bit32.rshift(w15,3))
+            local s1=bit32.bxor(fn6(w2,17),fn6(w2,19),bit32.rshift(w2,10))
+            w[j]=fn7(w[j-16],s0,w[j-7],s1)
+        end
+        local A,B,C,D,E,F,G,H=a,b2,c,d,e,f,g,h
+        for j=1,64 do
+            local S1=bit32.bxor(fn6(E,6),fn6(E,11),fn6(E,25))
+            local ch=bit32.bxor(bit32.band(E,F),bit32.band(bit32.bnot(E),G))
+            local temp1=fn7(H,S1,ch,tbl12[j],w[j])
+            local S0=bit32.bxor(fn6(A,2),fn6(A,13),fn6(A,22))
+            local maj=bit32.bxor(bit32.band(A,B),bit32.band(A,C),bit32.band(B,C))
+            local temp2=fn7(S0,maj)
+            H,G,F,E,D,C,B,A=G,F,E,fn7(D,temp1),C,B,A,fn7(temp1,temp2)
+        end
+        a=fn7(a,A);b2=fn7(b2,B);c=fn7(c,C);d=fn7(d,D);e=fn7(e,E);f=fn7(f,F);g=fn7(g,G);h=fn7(h,H)
+    end
+    return string.format('%08x%08x%08x%08x%08x%08x%08x%08x',a,b2,c,d,e,f,g,h)
+end
+local function fn9(salt, diff)
+    local d=tonumber(diff); if not d then return nil end
+    local zero=string.rep('0',d); local zlen=#zero; local str=tostring(salt)..':'; local n=0
+    while true do
+        local start=os.clock(); local to=nil
+        while fn8(str..tostring(n)):sub(1,zlen)~=zero do
+            n+=1
+            if 0.003<=os.clock()-start then to=1;break end
+        end
+        if to==1 then task.wait(); continue end
+        break
+    end
+    return tostring(n)
+end
+local function fn10(token, json)
+    local h={accept='*/*',['accept-language']='en-US,en;q=0.9',referer='https://en.loader.to/',['sec-ch-ua']='"Chromium";v="137", "Not/A)Brand";v="24"',['sec-ch-ua-mobile']='?1',['sec-ch-ua-platform']='"Android"',['sec-fetch-dest']='empty',['sec-fetch-mode']='cors',['sec-fetch-site']='cross-site'}
+    if json then h['content-type']='application/json' end
+    if token then h.authorization='Bearer '..token end
+    return h
+end
+local function fn11(res)
+    if not res then return nil end
+    local body=res.Body or res.body
+    if type(body)~='string' then return nil end
+    local ok, data=pcall(HttpService.JSONDecode,HttpService,body)
+    if not ok or type(data)~='table' then return nil end
+    return data
+end
+local POW_BASE='https://p.savenow.to'; local POW_KEY='dfcb6d76f2f6a9894gjkege8a4ab232222'
+local cachedToken=nil; local tokenExp=0; local isFetching=false
+local function fn12()
+    if cachedToken and os.time()<tokenExp-30 then return cachedToken end
+    if isFetching then
+        local start=os.clock()
+        while isFetching do if os.clock()-start>=10 then break end; task.wait() end
+        if cachedToken and os.time()<tokenExp-30 then return cachedToken end
+    end
+    isFetching=true
+    local ok, tok, exp=pcall(function()
+        local c=request_({Url=POW_BASE..'/api/pow/challenge',Method='GET',Headers=fn10()})
+        local cj=fn11(c)
+        if not cj or not cj.salt or not cj.difficulty or not cj.expires_at or not cj.signature then return nil end
+        local nonce=fn9(cj.salt,cj.difficulty)
+        if not nonce then return nil end
+        local v=request_({Url=POW_BASE..'/api/pow/verify',Method='POST',Headers=fn10(nil,true),Body=HttpService:JSONEncode({salt=cj.salt,difficulty=cj.difficulty,expires_at=cj.expires_at,signature=cj.signature,nonce=nonce})})
+        local vj=fn11(v)
+        if not vj or not vj.success or type(vj.token)~='string' then return nil end
+        return vj.token, tonumber(vj.expires_at) or tonumber(cj.expires_at) or os.time()+300
+    end)
+    isFetching=false
+    if not ok or not tok then return nil end
+    cachedToken=tok; tokenExp=exp or os.time()+300
+    return cachedToken
+end
+local function DownloadMusic(url)
+    local tok=fn12()
+    local dlUrl=POW_BASE..'/api/v2/download?format=mp3&url='..HttpService:UrlEncode(url)..'&apikey='..POW_KEY
+    local ok, res=pcall(function() return request_({Url=dlUrl,Method='GET',Headers=fn10(tok)}) end)
+    if not ok then return 'error' end
+    local rj=fn11(res)
+    if not rj or not rj.success or type(rj.progress_url)~='string' then return 'error' end
+    local progUrl=rj.progress_url; local start=os.clock(); local finalData=nil; local stuck=0
+    while true do
+        if os.clock()-start>200 then break end
+        local ok2, res2=pcall(function() return request_({Url=progUrl,Method='GET',Headers=fn10(tok)}) end)
+        if ok2 then
+            local pj=fn11(res2)
+            if pj then
+                if pj.progress==1000 and type(pj.download_url)=='string' then finalData=pj; break
+                elseif pj.progress==1000 then stuck+=1; if stuck>=2 then break end end
+            end
+        end
+        task.wait(2)
+    end
+    if not finalData then return 'error' end
+    local links={}
+    if type(finalData.download_url)=='string' then table.insert(links, finalData.download_url) end
+    if type(finalData.alternative_download_urls)=='table' then
+        for _,ad in ipairs(finalData.alternative_download_urls) do
+            if #links>=4 then break end
+            if type(ad)=='table' and type(ad.url)=='string' and ad.url~=finalData.download_url then table.insert(links, ad.url) end
+        end
+    end
+    if #links==0 then return 'error' end
+    local out={}
+    for i=1,math.min(#links,4) do out[i]='Download'..i..': '..links[i] end
+    return table.concat(out,'\n')
+end
+
+-- ==========================================
+-- 2. AUDIO ENGINE
+-- ==========================================
+local sound = Instance.new('Sound')
+sound.Parent = game:GetService('SoundService')
+sound.Looped = false
+sound.Volume = 1
+local eq = Instance.new('EqualizerSoundEffect')
+eq.LowGain = 0; eq.MidGain = 0; eq.HighGain = 0
+eq.Parent = sound
+
+local function clearEffects()
+    for _, c in ipairs(sound:GetChildren()) do
+        if c:IsA('SoundEffect') and c ~= eq then c:Destroy() end
+    end
+end
+
+-- ==========================================
+-- 3. UI CONSTRUCTION & HELPERS
+-- ==========================================
+local Window = Spectre.new({ Name = "SPECTRE", Keybind = "LeftAlt", TextSize = 15 })
+Window:DrawCategory({ Name = "YouTube" })
+
+local PlayTab = Window:DrawTab({ Name = "Playback" })
+local SearchTab = Window:DrawTab({ Name = "Search" })
+local EqTab = Window:DrawTab({ Name = "Equalizer" })
+
+local PlaySec = PlayTab:DrawSection({ Name = "Controls", Position = "left" })
+local SearchSec = SearchTab:DrawSection({ Name = "Search", Position = "left" })
+local ResultsSec = SearchTab:DrawSection({ Name = "Results", Position = "right" })
+local EqSec = EqTab:DrawSection({ Name = "Presets", Position = "left" })
+local VolSec = EqTab:DrawSection({ Name = "Volume & Pitch", Position = "right" })
+
+-- Custom Prompt Fallback for missing Textbox API
+local function customPrompt(title, callback)
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "SpectrePrompt"
+    sg.Parent = game:GetService("CoreGui")
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(0, 300, 0, 110)
+    f.Position = UDim2.new(0.5, -150, 0.5, -55)
+    f.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    f.BorderSizePixel = 0
+    f.Parent = sg
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = f
+    
+    local t = Instance.new("TextLabel")
+    t.Size = UDim2.new(1, 0, 0, 30); t.Text = title; t.TextColor3 = Color3.fromRGB(255, 255, 255)
+    t.BackgroundTransparency = 1; t.Font = Enum.Font.GothamBold; t.TextSize = 14; t.Parent = f
+    
+    local tb = Instance.new("TextBox")
+    tb.Size = UDim2.new(1, -20, 0, 30); tb.Position = UDim2.new(0, 10, 0, 35)
+    tb.BackgroundColor3 = Color3.fromRGB(20, 20, 20); tb.TextColor3 = Color3.fromRGB(255, 255, 255)
+    tb.PlaceholderText = "..."; tb.Text = ""; tb.Font = Enum.Font.Gotham; tb.TextSize = 14
+    tb.BorderSizePixel = 0; tb.Parent = f
+    local c2 = Instance.new("UICorner"); c2.CornerRadius = UDim.new(0, 4); c2.Parent = tb
+    
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -20, 0, 24); b.Position = UDim2.new(0, 10, 0, 75)
+    b.BackgroundColor3 = Color3.fromRGB(50, 120, 80); b.Text = "Submit"
+    b.TextColor3 = Color3.fromRGB(255, 255, 255); b.Font = Enum.Font.GothamBold; b.TextSize = 13
+    b.BorderSizePixel = 0; b.Parent = f
+    local c3 = Instance.new("UICorner"); c3.CornerRadius = UDim.new(0, 4); c3.Parent = b
+    
+    b.MouseButton1Click:Connect(function()
+        local text = tb.Text
+        sg:Destroy()
+        if text and text ~= "" then callback(text) end
+    end)
+end
+
+-- Helper to dynamically find the textbox method or fallback to custom prompt
+local function addInput(section, name, default, callback)
+    local methods = {"AddTextbox", "AddTextBox", "AddInput", "AddTextInput"}
+    for _, m in ipairs(methods) do
+        if type(section[m]) == "function" then
+            local ok, res = pcall(section[m], section, {Name = name, Default = default, Callback = callback})
+            if ok and res then return res end
+        end
+    end
+    -- Fallback
+    section:AddButton({
+        Name = name,
+        Callback = function()
+            customPrompt(name, function(text)
+                callback(text)
+            end)
+        end
+    })
+end
+
+-- Playback logic
+local function playTrack(track, filepath)
+    if not track then return end
+    if isfile(filepath) then
+        print("[SPECTRE] Playing local: " .. tostring(track.name or track.id))
+        sound.SoundId = getcustomasset(filepath)
+        sound:Play()
+        return
+    end
+    
+    print("[SPECTRE] Downloading: " .. tostring(track.name or track.id))
+    task.spawn(function()
+        local links = DownloadMusic("https://youtu.be/" .. track.id)
+        if links and links ~= 'error' then
+            for line in links:gmatch('[^\n]+') do
+                local link = line:match('Download%d+: (.+)')
+                if link then
+                    local ok, data = pcall(function() return game:HttpGet(link) end)
+                    if ok and data and #data > 1000 then
+                        writefile(filepath, data)
+                        print("[SPECTRE] Playing: " .. tostring(track.name or track.id))
+                        sound.SoundId = getcustomasset(filepath)
+                        sound:Play()
+                        return
+                    end
+                end
+            end
+        end
+        print("[SPECTRE] Download failed.")
+    end)
+end
+
+-- ==========================================
+-- 4. UI CALLBACKS & WIRING
+-- ==========================================
+
+PlaySec:AddButton({
+    Name = "Pause / Resume",
+    Callback = function()
+        if sound.IsPlaying then sound:Pause() else sound:Resume() end
+    end
+})
+PlaySec:AddButton({
+    Name = "Stop",
+    Callback = function()
+        sound:Stop()
+        print("[SPECTRE] Status: Stopped")
+    end
+})
+
+-- Direct URL Input
+local DirectId = ""
+addInput(SearchSec, "Set YouTube URL/ID", "", function(text)
+    DirectId = text
+    print("[SPECTRE] URL/ID set: " .. text)
+end)
+
+SearchSec:AddButton({
+    Name = "Play Direct Link",
+    Callback = function()
+        if not DirectId or DirectId == "" then return end
+        local id = DirectId:match("v=([%w_-]+)") or DirectId:match("youtu%.be/([%w_-]+)") or DirectId
+        if #id == 11 then
+            local track = { id = id, name = "Direct Track ("..id..")" }
+            playTrack(track, "YouTube Music Player/Musics/" .. id .. ".mp3")
+        else
+            print("[SPECTRE] Invalid URL or ID.")
+        end
+    end
+})
+
+-- Search Input
+local SearchQuery = ""
+addInput(SearchSec, "Set Search Query", "", function(text)
+    SearchQuery = text
+    print("[SPECTRE] Search query set: " .. text)
+end)
+
+local SearchResults = {}
+local ResultButtons = {}
+for i = 1, 5 do
+    ResultButtons[i] = ResultsSec:AddButton({
+        Name = "Play Result " .. i,
+        Callback = function()
+            if SearchResults[i] then
+                local track = SearchResults[i]
+                playTrack(track, "YouTube Music Player/Musics/" .. track.id .. ".mp3")
+            else
+                print("[SPECTRE] No result at slot " .. i)
+            end
+        end
+    })
+end
+
+SearchSec:AddButton({
+    Name = "Search YouTube",
+    Callback = function()
+        if not SearchQuery or SearchQuery == "" then return end
+        print("[SPECTRE] Searching...")
+        local results = ApiSearchFree(SearchQuery)
+        if results then
+            for i = 1, 5 do
+                if results[i] then
+                    SearchResults[i] = results[i]
+                    print("[SPECTRE] Result " .. i .. ": " .. results[i].name)
+                else
+                    SearchResults[i] = nil
+                end
+            end
+            print("[SPECTRE] Found results. Check console, then click a 'Play Result' button.")
+        else
+            print("[SPECTRE] Search failed or no results.")
+        end
+    end
+})
+
+-- Volume & Pitch
+VolSec:AddSlider({ Name = "Volume", Min = 0, Max = 10, Default = 1, Callback = function(v) sound.Volume = v end })
+VolSec:AddSlider({ Name = "Pitch / Speed", Min = 0.5, Max = 2, Default = 1, Callback = function(v) sound.PlaybackSpeed = v end })
+
+-- Equalizer Presets
+EqSec:AddButton({ Name = "Flat (Reset)", Callback = function() clearEffects(); eq.LowGain = 0; eq.MidGain = 0; eq.HighGain = 0 end })
+EqSec:AddButton({ Name = "Bass Boost", Callback = function() clearEffects(); eq.LowGain = 10; eq.MidGain = 0; eq.HighGain = 0 end })
+EqSec:AddButton({ Name = "Vocal Boost", Callback = function() clearEffects(); eq.LowGain = -2; eq.MidGain = 6; eq.HighGain = 0 end })
+EqSec:AddButton({ Name = "Reverb", Callback = function()
+    clearEffects()
+    local r = Instance.new('ReverbSoundEffect', sound)
+    r.DecayTime = 2.6; r.Density = 0.75; r.Diffusion = 0.9; r.WetLevel = -9; r.DryLevel = 0
+    eq.LowGain = -1; eq.MidGain = 0; eq.HighGain = -3
+end })
+EqSec:AddButton({ Name = "8-Bit / Radio", Callback = function()
+    clearEffects()
+    local d = Instance.new('DistortionSoundEffect', sound); d.Level = 0.25
+    eq.LowGain = -10; eq.MidGain = 10; eq.HighGain = -12
+    sound.PlaybackSpeed = 0.97
+end })
+
+-- Custom EQ Sliders
+EqSec:AddSlider({ Name = "Bass (Low)", Min = -10, Max = 10, Default = 0, Callback = function(v) eq.LowGain = v end })
+EqSec:AddSlider({ Name = "Mids (Mid)", Min = -10, Max = 10, Default = 0, Callback = function(v) eq.MidGain = v end })
+EqSec:AddSlider({ Name = "Treble (High)", Min = -10, Max = 10, Default = 0, Callback = function(v) eq.HighGain = v end })
+
+print("[spectre] YouTube Player loaded. LeftAlt to toggle.")
