@@ -1,0 +1,195 @@
+!nocheck
+-- mobile_fly_v5.luau
+-- target: Delta iOS Executor (Luau environment)
+-- fix: camera-locked rotation, smooth turning, and Freefall state for natural animation
+-- features: thumbstick fly, up/down buttons, camera-direction facing, forward lean
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+if not (UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled) then
+    warn("mobile build; use the keyboard variant on PC.")
+    return
+end
+
+local playerModule = require(LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
+local controls = playerModule:GetControls()
+
+local CONFIG = {
+    FlySpeed = 48,
+    VerticalSpeed = 28,
+    RotationSpeed = 30, -- higher = snappier turning, lower = smoother floaty turns
+    Smoothness = 10,    -- movement acceleration smoothing
+    LeanAmount = 15,    -- degrees of forward tilt when moving at full speed
+}
+
+local flying = false
+local verticalInput = 0
+local alignPos, alignOri, attach = nil, nil, nil
+local currentVel = Vector3.zero
+local savedWalkSpeed = nil
+
+local function stopFly()
+    flying = false
+    if alignPos then alignPos:Destroy() alignPos = nil end
+    if alignOri then alignOri:Destroy() alignOri = nil end
+    if attach then attach:Destroy() attach = nil end
+    currentVel = Vector3.zero
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.AutoRotate = true
+            hum.WalkSpeed = savedWalkSpeed or 16
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+    end
+end
+
+local function startFly()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    savedWalkSpeed = hum.WalkSpeed
+    hum.WalkSpeed = 16 -- keeps the animate script active
+    hum.AutoRotate = false -- we handle rotation now
+    hum.PlatformStand = false -- keep humanoid physics active
+
+    attach = Instance.new("Attachment")
+    attach.Parent = hrp
+
+    -- position constraint for movement
+    alignPos = Instance.new("AlignPosition")
+    alignPos.Attachment0 = attach
+    alignPos.Mode = Enum.PositionAlignmentMode.OneAttachment
+    alignPos.Position = hrp.Position
+    alignPos.MaxForce = math.huge
+    alignPos.Responsiveness = 100
+    alignPos.ApplyAtCenterOfMass = true
+    alignPos.Parent = hrp
+
+    -- orientation constraint for camera-facing
+    alignOri = Instance.new("AlignOrientation")
+    alignOri.Attachment0 = attach
+    alignOri.Mode = Enum.OrientationAlignmentMode.OneAttachment
+    alignOri.CFrame = hrp.CFrame
+    alignOri.MaxTorque = math.huge
+    alignOri.Responsiveness = CONFIG.RotationSpeed
+    alignOri.RigidityEnabled = false -- lets it turn smoothly, not snap
+    alignOri.Parent = hrp
+
+    currentVel = Vector3.zero
+    flying = true
+end
+
+RunService.RenderStepped:Connect(function(dt)
+    if not flying or not alignPos or not alignOri then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    -- Force freefall so the default animation script plays the falling pose
+    -- instead of freezing in a rigid T-pose.
+    if hum:GetState() ~= Enum.HumanoidStateType.Freefall then
+        hum:ChangeState(Enum.HumanoidStateType.Freefall)
+    end
+
+    -- thumbstick â camera-space direction
+    local mv = controls:GetMoveVector()
+    local camCF = Camera.CFrame
+    local fwd = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z)
+    local rgt = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z)
+    if fwd.Magnitude > 0 then fwd = fwd.Unit end
+    if rgt.Magnitude > 0 then rgt = rgt.Unit end
+    local dir = (fwd * -mv.Z) + (rgt * mv.X)
+    if dir.Magnitude > 0 then dir = dir.Unit end
+
+    -- smoothed velocity
+    local targetVel = dir * CONFIG.FlySpeed
+    targetVel = targetVel + Vector3.new(0, verticalInput * CONFIG.VerticalSpeed, 0)
+    currentVel = currentVel:Lerp(targetVel, math.clamp(dt * CONFIG.Smoothness, 0, 1))
+
+    -- apply velocity to the constraint
+    alignPos.Position = alignPos.Position + currentVel * dt
+
+    -- camera-facing orientation with a forward lean
+    local lookVector = camCF.LookVector
+    local baseCFrame = CFrame.lookAt(alignPos.Position, alignPos.Position + lookVector)
+
+    -- calculate lean based on current horizontal speed
+    local horizSpeed = Vector3.new(currentVel.X, 0, currentVel.Z).Magnitude
+    local leanAngle = math.rad((horizSpeed / CONFIG.FlySpeed) * CONFIG.LeanAmount)
+    
+    -- apply lean to the cframe (tilt forward on X axis)
+    alignOri.CFrame = baseCFrame * CFrame.Angles(leanAngle, 0, 0)
+end)
+
+-- ============================================================
+-- GUI
+-- ============================================================
+local gui = Instance.new("ScreenGui")
+gui.Name = "MobileFlyGUI"
+gui.ResetOnSpawn = false
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local flyBtn = Instance.new("TextButton")
+flyBtn.Size = UDim2.new(0, 140, 0, 60)
+flyBtn.Position = UDim2.new(0, 20, 0.5, -30)
+flyBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+flyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+flyBtn.TextScaled = true
+flyBtn.Font = Enum.Font.GothamBold
+flyBtn.Text = "FLY: OFF"
+flyBtn.Parent = gui
+
+flyBtn.MouseButton1Click:Connect(function()
+    if flying then
+        stopFly()
+        flyBtn.Text = "FLY: OFF"
+        flyBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    else
+        startFly()
+        flyBtn.Text = "FLY: ON"
+        flyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+    end
+end)
+
+local upBtn = Instance.new("TextButton")
+upBtn.Size = UDim2.new(0, 80, 0, 80)
+upBtn.Position = UDim2.new(0.5, -90, 0.8, -40)
+upBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+upBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+upBtn.TextScaled = true
+upBtn.Font = Enum.Font.GothamBold
+upBtn.Text = "â"
+upBtn.Parent = gui
+upBtn.MouseButton1Down:Connect(function() verticalInput = 1 end)
+upBtn.MouseButton1Up:Connect(function() verticalInput = 0 end)
+
+local downBtn = Instance.new("TextButton")
+downBtn.Size = UDim2.new(0, 80, 0, 80)
+downBtn.Position = UDim2.new(0.5, 10, 0.8, -40)
+downBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 0)
+downBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+downBtn.TextScaled = true
+downBtn.Font = Enum.Font.GothamBold
+downBtn.Text = "â"
+downBtn.Parent = gui
+downBtn.MouseButton1Down:Connect(function() verticalInput = -1 end)
+downBtn.MouseButton1Up:Connect(function() verticalInput = 0 end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    stopFly()
+    flyBtn.Text = "FLY: OFF"
+    flyBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+end)
